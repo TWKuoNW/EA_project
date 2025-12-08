@@ -6,10 +6,8 @@ import time
 # -------------------------------------------------------------
 # Fitness function
 # -------------------------------------------------------------
-def fitness_function(individual, render="rgb_array"):
-    # Toy fitness function:
+def fitness_function(individual, render="rgb_array"): # human rgb_array
     env = gym.make("gym_pusht/PushT-v0", render_mode=render) 
-
     fixed_state = [0.0, 0.0, 100.0, 200.0, 180.0]  # agent_x,agent_y,block_x,block_y,angle
     observation, info = env.reset(options={"reset_to_state": fixed_state})
     r = 0
