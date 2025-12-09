@@ -125,76 +125,34 @@ class AgentIndividual(Individual):
 
     def mutate(self):
         """
-        Mutation logic:
-        1. First record the current performance of this action sequence in the environment.
-        2. Run multiple experiments:
-        - Copy the current action sequence
-        - Append a small new action block at the end
-        - Run it in the environment to see whether the reward improves
-        3. If any experiment produces a better result, adopt the best candidate.
-        Otherwise, keep the original sequence unchanged.
+        Simplified mutation:
+        - Do NOT run internal evolution / selection.
+        - Just append one new action block (a sequence of actions) to the end.
+        - The outer EA (selection) will decide whether this longer sequence is good.
         """
 
-        # 1. Make sure we have the current objective values
-        if self.objectives is None:
-            self.objectives = self.__class__.ObjFunc(self.state)
+        # Optionally: adapt mutation rate (you can also remove this line if not needed)
+        self.mutateMutRate()
 
-        # Current step count and reward
-        base_steps, base_reward = self.objectives
-
-        best_state = self.state[:]          # The best gene sequence so far
-        best_steps = base_steps
-        best_reward = base_reward
-
-        # If maximum allowed length is reached, do not add more blocks
-        # nGenes = "maximum allowed number of genes"
+        # If already at maximum allowed length, do nothing
         if len(self.state) >= self.__class__.nGenes:
             return
 
-        # 2. Try multiple candidate mutations (numTryPerMut times)
-        for _ in range(self.__class__.numTryPerMut):
-            # Copy the current individual's state
-            candidate = self.state[:]
+        # One block = blockActionSize actions, each action uses 2 genes (x, y)
+        genes_per_block = 2 * self.__class__.blockActionSize
 
-            # How many genes to add this time:
-            # blockActionSize actions, each action = 2 values
-            genes_to_add = 2 * self.__class__.blockActionSize
+        # Avoid exceeding nGenes
+        max_addable = self.__class__.nGenes - len(self.state)
+        genes_to_add = min(genes_per_block, max_addable)
 
-            # Skip if adding this block would exceed maximum length
-            if len(candidate) + genes_to_add > self.__class__.nGenes:
-                continue
+        # Append genes_to_add genes (in pairs: [a, b])
+        for _ in range(genes_to_add // 2):
+            a = self.uniprng.uniform(0.0, float(self.geneRange))
+            b = self.uniprng.uniform(0.0, float(self.geneRange))
+            self.state.extend([a, b])
 
-            # Append one action block consisting of blockActionSize actions
-            for _ in range(self.__class__.blockActionSize):
-                a = self.uniprng.uniform(0.0, float(self.geneRange))
-                b = self.uniprng.uniform(0.0, float(self.geneRange))
-                candidate.extend([a, b])
-
-            # Evaluate this candidate in the environment
-            cand_steps, cand_reward = self.__class__.ObjFunc(candidate)
-
-            # Compare which one is better:
-            #   1. Higher reward → better
-            #   2. If reward is equal, fewer steps → better
-            is_better = False
-            if cand_reward > best_reward:
-                is_better = True
-            elif cand_reward == best_reward and cand_steps < best_steps:
-                is_better = True
-
-            if is_better:
-                best_state = candidate
-                best_steps = cand_steps
-                best_reward = cand_reward
-
-        # 3. Update the individual if the best candidate is better than the original
-        #    (Compare again with base values to ensure actual improvement)
-        if (best_reward > base_reward) or (best_reward == base_reward and best_steps < base_steps):
-            self.state = best_state
-            self.objectives = [best_steps, best_reward]
-        else:
-            # No improvement → keep the original (objectives remain base)
-            self.objectives = [base_steps, base_reward]
+        # Let the outer EA re-evaluate this individual later
+        self.objectives = None
 
 
     

@@ -16,7 +16,7 @@ class Evaluator:
 		else:
 			env = gym.make("gym_pusht/PushT-v0")
 
-		fixed_state = [500.0, 200.0, 320.0, 200.0, 0]  # agent_x, agent_y, block_x, block_y, angle
+		fixed_state = [20.0, 250, 100.0, 200.0, 0.0]  # agent_x, agent_y, block_x, block_y, angle
 		env.reset(options={"reset_to_state": fixed_state})
 
 		rewardEnd = 0.0
