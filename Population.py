@@ -38,7 +38,7 @@ class Population:
         return copy.deepcopy(self)
 
     def evaluateObjectives(self):
-        for individual in self.population: 
+        for individual in self.population:
             individual.evaluateObjectives()
 
     def mutate(self):

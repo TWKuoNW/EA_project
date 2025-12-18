@@ -1,26 +1,19 @@
-#
-# Agent.py:
-#
-#   An elitist (mu+mu) generational-with-overlap EA
-#   Min-max MO problem with Pareto front
-#
-#
-# To run: python Agent.py --input magic_example.cfg
-#         python Agent.py --input my_params.cfg
-#
-#   - Supports self-adaptive mutation
-#   - Uses MO-binary tournament selection for mating pool
-#   - Uses MO-elitist truncation selection for survivors
-#
-
+import csv
+import os
 import optparse
 import sys
 import yaml
 import math
 import time
+import gymnasium as gym
+import gym_pusht
+import matplotlib.pyplot as plt
+from VideoRecorder import VideoRecorder
+from datetime import datetime
 from random import Random
 from Population import *
 from Evaluator import *
+
 
 # Agent Config class
 class AgentConfig:
@@ -49,7 +42,7 @@ class AgentConfig:
         ymlcfg=yaml.safe_load(infile)
         infile.close()
         eccfg=ymlcfg.get(self.sectionName,None)
-        if eccfg is None: 
+        if eccfg is None:
             raise Exception('Missing {} section in cfg file'.format(self.sectionName))
 
         #iterate over options
@@ -75,8 +68,8 @@ class AgentConfig:
 
 #Print some useful stats to screen
 def printStats(pop, gen):
-    avgReward=0
-    avgSeqSteps=0
+    avgReward=0.0
+    avgSeqSteps=0.0
 
     # objectives = [nSeqSteps, rewardEnd]
     nSeqSteps, maxReward = pop[0].objectives
@@ -90,14 +83,27 @@ def printStats(pop, gen):
         if ind.objectives[1] > maxReward:
             nSeqSteps, maxReward = ind.objectives
             mutRate = ind.mutRate
-        # print(ind)
-    print('Generation:',gen)
+
+    avgReward /= len(pop)
+    avgSeqSteps /= len(pop)
+
+    print('Generation:', gen)
     print('Max Reward', maxReward)
     print('SeqSteps of Best', nSeqSteps)
-    print('Avg Reward', avgReward/len(pop))
-    print('Avg SeqSteps', avgSeqSteps/len(pop))
+    print('Avg Reward', avgReward)
+    print('Avg SeqSteps', avgSeqSteps)
     print('MutRate', mutRate)
     print('')
+
+    return {
+        "generation": gen,
+        "max_reward": float(maxReward),
+        "avg_reward": float(avgReward),
+        "best_steps": float(nSeqSteps),
+        "avg_steps": float(avgSeqSteps),
+        "best_mutRate": float(mutRate),
+    }
+
 
 
 #
@@ -108,6 +114,7 @@ def initClassVars(cfg):
     Evaluator.selfCost=cfg.selfCost
     Evaluator.selfDamage=cfg.selfDamage
     Evaluator.EnhanceDamage=cfg.EnhanceDamage
+    Evaluator.cfg = cfg # Make cfg available to the Evaluator class
 
     AgentIndividual.ObjFunc=Evaluator.ObjFunc
     AgentIndividual.nGenes=cfg.nGenesCfg
@@ -140,7 +147,8 @@ def EV3_MO(cfg):
     population.updateRanking()
 
     # print initial pop stats
-    printStats(population, 0)
+    history = []
+    history.append(printStats(population, 0))
     # population.generatePlots(title=f'Generation 0')
 
     # evolution main loop
@@ -172,10 +180,71 @@ def EV3_MO(cfg):
         population.MOTruncation(cfg.populationSize)
 
         #print population stats
-        printStats(population,i+1)
+        history.append(printStats(population, i+1))
         #print the objective space with its frontRank
         #population.generatePlots(title=f'Generation {i+1}')
-    
+
+    # Define weighting factors
+    weight_reward = 1.0  # Example weighting for rewardEnd
+    weight_nSeqSteps = 0 # Example weighting for nSeqSteps
+
+    # After evolution, find the individual with the highest weighted score
+    best_individual = None
+    max_weighted_score = -float('inf')
+
+    # ===== Save learning curve (CSV + PNG) =====
+    out_dir = "./logs"
+    os.makedirs(out_dir, exist_ok=True)
+    run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    csv_path = os.path.join(out_dir, f"learning_curve_{run_id}.csv")
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=list(history[0].keys()))
+        writer.writeheader()
+        writer.writerows(history)
+    print(f"[Saved] CSV: {csv_path}")
+
+    gens = [h["generation"] for h in history]
+    max_rewards = [h["max_reward"] for h in history]
+    avg_rewards = [h["avg_reward"] for h in history]
+
+    plt.figure()
+    plt.plot(gens, max_rewards, label="Max Reward")
+    plt.plot(gens, avg_rewards, label="Avg Reward")
+    plt.xlabel("Generation")
+    plt.ylabel("Reward")
+    plt.title("EA Progress (Reward vs Generation)")
+    plt.legend()
+    plt.grid(True)
+
+    fig_path = os.path.join(out_dir, f"learning_curve_{run_id}.png")
+    plt.savefig(fig_path, dpi=200, bbox_inches="tight")
+    plt.close()
+    print(f"[Saved] Plot: {fig_path}")
+
+    for ind in population:
+        # objectives = [nSeqSteps, rewardEnd]
+        nSeqSteps_val = ind.objectives[0]
+        rewardEnd_val = ind.objectives[1]
+
+        # Calculate weighted score
+        current_weighted_score = (weight_reward * rewardEnd_val) - (weight_nSeqSteps * nSeqSteps_val)
+
+        if current_weighted_score > max_weighted_score:
+            max_weighted_score = current_weighted_score
+            best_individual = ind
+
+    if best_individual:
+        print(f'\nBest individual (weighted score: {max_weighted_score:.4f}):')
+        print(f'  Reward End: {best_individual.objectives[1]}')
+        print(f'  Sequence Steps: {best_individual.objectives[0]}')
+        print(f'  State (Action Sequence): {best_individual.state}')
+        v = VideoRecorder(best_individual.state)
+        v.record()
+        return best_individual.state
+    else:
+        return None
+
 #
 # Main entry point
 #
@@ -199,13 +268,17 @@ def main(argv=None):
 
         #run EV3_MO
         start_time=time.asctime()
-        EV3_MO(cfg)
+        final_best_state = EV3_MO(cfg)
 
         print('Start time: {}'.format(start_time))
         print('End time  : {}'.format(time.asctime()))
 
         if not options.quietMode:
             print('Agent Completed!')
+            if final_best_state:
+                print(f'Final best action sequence: {final_best_state}')
+            else:
+                print('No best action sequence found.')
 
     except Exception as info:
         from traceback import print_exc
@@ -213,4 +286,5 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
-    main()
+    main()  # Normal code line for use on desktop computer
+    # main(argv=['-i', 'AgentConfig.cfg'])  # Code line to use for Colab

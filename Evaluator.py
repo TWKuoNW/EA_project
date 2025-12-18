@@ -7,6 +7,7 @@ class Evaluator:
 	selfCost = None #cls.selfCost[state[i]]
 	selfDamage = None #cls.selfDamage[state[i]]
 	EnhanceDamage = None #cls.EnhanceDamage[state[i-1]][state[i]]
+	cfg = None # Add cfg as a class variable
 
 	@classmethod
 	def ObjFunc(cls, state, render= False):
@@ -31,7 +32,9 @@ class Evaluator:
 				observation, info = env.reset(options={"reset_to_state": fixed_state})
 		env.close()
 
-		nSeqSteps = len(state) // 2
+		# Normalized number of steps
+		nSeqSteps = float(len(state)) / float(cls.cfg.nGenesCfg)
+		#nSeqSteps = len(state) // 2
 
 		objectives = [nSeqSteps, rewardEnd]
 

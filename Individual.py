@@ -1,8 +1,3 @@
-#
-# Individual.py
-#
-#
-
 import math
 
 #Base class for all individual types
@@ -27,13 +22,13 @@ class Individual:
 
     def mutateMutRate(self):
         self.mutRate=self.mutRate*math.exp(self.learningRate*self.normprng.normalvariate(0,1))
-        if self.mutRate < self.minMutRate: 
+        if self.mutRate < self.minMutRate:
             self.mutRate=self.minMutRate
-        if self.mutRate > self.maxMutRate: 
+        if self.mutRate > self.maxMutRate:
             self.mutRate=self.maxMutRate
 
     def evaluateObjectives(self):
-        if self.objectives == None: 
+        if self.objectives == None:
             self.objectives=self.__class__.ObjFunc(self.state)
 
     def dominates(self,other):
@@ -98,7 +93,7 @@ class Individual:
 
 class AgentIndividual(Individual):
     """
-    ActorIndividual
+    AgentIndividual
     """
     nGenes=None
     geneRange=None
@@ -107,7 +102,7 @@ class AgentIndividual(Individual):
 
     def __init__(self):
         self.state = []
-        init_genes = 2 * self.__class__.blockActionSize 
+        init_genes = 2 * self.__class__.blockActionSize
         for _ in range(init_genes):
             self.state.append(self.uniprng.uniform(0.0, float(self.geneRange)))
         super().__init__()
@@ -124,38 +119,72 @@ class AgentIndividual(Individual):
         other.objectives=None
 
     def mutate(self):
-        """
-        Simplified mutation:
-        - Do NOT run internal evolution / selection.
-        - Just append one new action block (a sequence of actions) to the end.
-        - The outer EA (selection) will decide whether this longer sequence is good.
-        """
 
-        # Optionally: adapt mutation rate (you can also remove this line if not needed)
+        # Adapt mutation rate
         self.mutateMutRate()
 
-        # If already at maximum allowed length, do nothing
-        if len(self.state) >= self.__class__.nGenes:
-            return
+        # Use the adapted mutation rate for existing gene mutations
+        mutation_of_existing_genes_rate = self.mutRate
 
-        # One block = blockActionSize actions, each action uses 2 genes (x, y)
-        genes_per_block = 2 * self.__class__.blockActionSize
+        if self.uniprng.random() < mutation_of_existing_genes_rate:
+          # Mutating the existing genes
+          n_mutable_genes = len(self.state) - 2
 
-        # Avoid exceeding nGenes
-        max_addable = self.__class__.nGenes - len(self.state)
-        genes_to_add = min(genes_per_block, max_addable)
+          if n_mutable_genes > 0:
+              # Define the standard deviation for the Gaussian mutation
+              # (e.g., 5% of the geneRange, can be adjusted)
+              mutation_strength_sigma = float(self.geneRange) * 0.05
 
-        # Append genes_to_add genes (in pairs: [a, b])
-        for _ in range(genes_to_add // 2):
-            a = self.uniprng.uniform(0.0, float(self.geneRange))
-            b = self.uniprng.uniform(0.0, float(self.geneRange))
-            self.state.extend([a, b])
+              for i in range(2, len(self.state)): # Iterate from the third gene (index 2)
+                  # Calculate the index relative to the mutable range (0 to n_mutable_genes - 1)
+                  index_in_mutable_range = i - 2
+
+                  # Calculate mutation probability for this gene
+                  if n_mutable_genes == 1:
+                      # If only one mutable gene, it's at the beginning, so 5% probability
+                      mutation_prob = 0.05
+                  else:
+                      # Linear decrease from 0.05 at start (index_in_mutable_range=0) to 0 at end
+                      mutation_prob = 0.05 * (n_mutable_genes - 1 - index_in_mutable_range) / (n_mutable_genes - 1)
+
+                  if self.uniprng.random() < mutation_prob:
+                      # Mutate by adding a value from a Gaussian distribution centered at the current gene value
+                      current_gene_value = self.state[i]
+                      new_gene_value = self.normprng.normalvariate(current_gene_value, mutation_strength_sigma)
+
+                      # Ensure the new value stays within the geneRange
+                      self.state[i] = max(0.0, min(float(self.geneRange), new_gene_value))
+
+        else:
+          # Otherwise only additional genes are added
+
+          # If already at maximum allowed length, do nothing
+          if len(self.state) >= self.__class__.nGenes:
+              return
+
+          # Determine the maximum number of *actions* that can be added in one mutation step
+          max_actions_per_mutation = self.__class__.blockActionSize
+
+          # Randomly choose how many *actions* to add (between 0 and max_actions_per_mutation)
+          num_actions_to_add = self.uniprng.randint(0, max_actions_per_mutation)
+
+          # Convert actions to genes (each action uses 2 genes)
+          genes_to_add_randomly = num_actions_to_add * 2
+
+          # Avoid exceeding nGenes (the absolute maximum length for the state)
+          max_addable_genes = self.__class__.nGenes - len(self.state)
+          actual_genes_to_add = min(genes_to_add_randomly, max_addable_genes)
+
+          # Append genes (in pairs: [a, b])
+          # Ensure we only add an even number of genes since actions are pairs
+          for _ in range(actual_genes_to_add // 2):
+              a = self.uniprng.uniform(0.0, float(self.geneRange))
+              b = self.uniprng.uniform(0.0, float(self.geneRange))
+              self.state.extend([a, b])
 
         # Let the outer EA re-evaluate this individual later
         self.objectives = None
 
-
-    
     def __str__(self):
         return (
             str(self.state) + '\t' +
